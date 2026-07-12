@@ -149,10 +149,41 @@ DEPT_TEMPLATE = """\
 *Última atualização: {data}*
 """
 
-PROJ_TEMPLATE = """\
+PROJ_README_TEMPLATE = """\
+# {nome}
+
+> Índice do projeto. Gerado automaticamente — edite com cuidado.
+
+| Campo | Valor |
+|-------|-------|
+| **Âncora** | {anchor} |
+| **Status** | ativo |
+| **Criado** | {data} |
+
+## Arquivos
+
+- [`ancora.md`](ancora.md) — objetivo, escopo e stakeholders
+- [`tasks.md`](tasks.md) — tarefas abertas e concluídas
+- [`changelog.md`](changelog.md) — contexto destilado (não edite)
+- [`raw/`](raw/) — registros brutos: reuniões, decisões, transcrições
+
+## Como registrar algo
+
+Crie um arquivo em `raw/` com o que aconteceu:
+
+```
+raw/reuniao-{data}.md
+raw/decisao-{data}.md
+raw/entrega-{data}.md
+```
+
+Formato livre — escreva como quiser. O hook destila automaticamente ao encerrar a sessão.
+"""
+
+PROJ_ANCORA_TEMPLATE = """\
 ---
 title: {nome}
-sa-ia-type: projeto
+sa-ia-type: ancora-projeto
 slug: {slug}
 anchor: {anchor}
 status: ativo
@@ -167,19 +198,88 @@ criado: {data}
 
 ## Escopo
 
-[O que este projeto inclui]
+[O que este projeto inclui — seja específico]
 
 ## Fora do escopo
 
-[O que explicitamente não faz parte]
+[O que explicitamente não faz parte deste projeto]
 
-## Próximos passos
+## Stakeholders
 
-- [ ] [Primeira ação concreta]
+| Nome | Papel |
+|------|-------|
+| — | — |
 
-## Registro
+## Critério de sucesso
 
-<!-- Entradas destiladas aparecem aqui automaticamente -->
+[Como você sabe que o projeto foi concluído com sucesso]
+"""
+
+PERFIL_TEMPLATE = """\
+# Perfil de Destilação — {nome}
+
+## O que SEMPRE deve entrar no changelog
+
+- Decisões que alteram escopo, prazo ou orçamento
+- Marcos: contratos assinados, entregas aceitas, metas atingidas
+- Bloqueios que dependem de terceiros
+- Mudanças de responsabilidade
+- Próximos passos com data e responsável
+
+## O que NUNCA deve entrar
+
+- Detalhes operacionais já resolvidos
+- Repetição do que já está registrado
+- Perguntas sem resposta
+
+## Limite
+
+- Máximo 10 bullets por atualização
+- Se changelog ultrapassar 2000 tokens: comprimir entrada mais antiga em 1 parágrafo
+"""
+
+TASKS_TEMPLATE = """\
+---
+sa-ia-type: tasks
+projeto: {slug}
+atualizado: {data}
+---
+
+# Tarefas — {nome}
+
+## Em andamento
+
+- [ ] #task-001 [Primeira tarefa]
+
+## A fazer
+
+- [ ] #task-002 [Próxima tarefa]
+
+## Concluídas
+
+## Bloqueadas
+"""
+
+CHANGELOG_TEMPLATE = """\
+---
+sa-ia-type: changelog
+projeto: {slug}
+ultima-atualizacao: {data}
+---
+
+# Changelog — {nome}
+
+> Contexto destilado automaticamente. Não edite manualmente.
+
+## {data} — Início do projeto
+
+**Marcos alcançados**
+- Projeto criado com estrutura SA-IA
+
+**Próximos passos**
+- Preencher escopo em `ancora.md`
+- Adicionar primeiras tarefas em `tasks.md`
+- Criar primeiro registro em `raw/` após próxima reunião
 """
 
 ACTIVE_CTX_TEMPLATE = """\
@@ -325,11 +425,13 @@ def atomic_write(path, content):
     tmp.replace(path)
 
 def projeto_ativo():
+    """Retorna o Path da pasta do projeto ativo, ou None."""
     if not PROJ_DIR.exists():
         return None
-    for f in sorted(PROJ_DIR.glob("*.md")):
-        if "status: ativo" in f.read_text(encoding="utf-8"):
-            return f
+    for proj_dir in sorted(p for p in PROJ_DIR.iterdir() if p.is_dir()):
+        ancora = proj_dir / "ancora.md"
+        if ancora.exists() and "status: ativo" in ancora.read_text(encoding="utf-8"):
+            return proj_dir
     return None
 
 def listar_empresas():
@@ -511,23 +613,40 @@ def cmd_create():
                     anchor = f"{empresa.name}/{depts[int(dept_escolha)-1].stem}"
 
     # Pausa projetos ativos
-    for f in PROJ_DIR.glob("*.md"):
-        conteudo = f.read_text(encoding="utf-8")
-        if "status: ativo" in conteudo:
-            atomic_write(f, conteudo.replace("status: ativo", "status: pausado"))
+    for proj_pasta in PROJ_DIR.iterdir():
+        if not proj_pasta.is_dir():
+            continue
+        ancora_file = proj_pasta / "ancora.md"
+        if ancora_file.exists():
+            conteudo = ancora_file.read_text(encoding="utf-8")
+            if "status: ativo" in conteudo:
+                atomic_write(ancora_file, conteudo.replace("status: ativo", "status: pausado"))
 
-    # Cria projeto
-    atomic_write(proj_file, PROJ_TEMPLATE.format(
-        nome=nome, slug=slug, anchor=anchor,
-        objetivo=objetivo, data=hoje()
-    ))
+    # Cria estrutura de pasta do projeto
+    proj_dir = PROJ_DIR / slug
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    (proj_dir / "raw").mkdir(exist_ok=True)
 
-    # Cria pasta raw
-    (PROJ_DIR / "raw" / slug).mkdir(parents=True, exist_ok=True)
+    ctx = dict(nome=nome, slug=slug, anchor=anchor, objetivo=objetivo, data=hoje())
 
-    print(f"\n✓ Projeto criado: 02-projects/{slug}.md")
-    print(f"  Âncora: {anchor}")
-    print(f"  Raw: 02-projects/raw/{slug}/")
+    atomic_write(proj_dir / "README.md",
+                 PROJ_README_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir / "ancora.md",
+                 PROJ_ANCORA_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir / "perfil-destilacao.md",
+                 PERFIL_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir / "tasks.md",
+                 TASKS_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir / "changelog.md",
+                 CHANGELOG_TEMPLATE.format(**ctx))
+
+    print(f"\n✓ Projeto criado: 02-projects/{slug}/")
+    print(f"  ├── README.md")
+    print(f"  ├── ancora.md       (âncora: {anchor})")
+    print(f"  ├── perfil-destilacao.md")
+    print(f"  ├── tasks.md")
+    print(f"  ├── changelog.md")
+    print(f"  └── raw/")
 
 
 def cmd_status():
@@ -538,18 +657,20 @@ def cmd_status():
         print("Nenhum projeto ativo. Use: python sa-ia.py create\n")
         return
 
-    conteudo = ativo.read_text(encoding="utf-8")
-    print(f"Projeto ativo: {ativo.stem}\n")
+    print(f"Projeto ativo: {ativo.name}\n")
 
-    # Próximos passos abertos
-    passos = [l for l in conteudo.splitlines() if l.startswith("- [ ]")]
-    if passos:
-        print(f"Próximos passos ({len(passos)}):")
-        for p in passos:
-            print(f"  {p}")
+    # Tarefas abertas
+    tasks = ativo / "tasks.md"
+    if tasks.exists():
+        abertas = [l for l in tasks.read_text(encoding="utf-8").splitlines()
+                   if l.startswith("- [ ]")]
+        if abertas:
+            print(f"Tarefas abertas ({len(abertas)}):")
+            for t in abertas:
+                print(f"  {t}")
 
     # Raw pendente
-    raw_dir = PROJ_DIR / "raw" / ativo.stem
+    raw_dir = ativo / "raw"
     if raw_dir.exists():
         raw = sorted(raw_dir.glob("*.md"))
         if raw:
@@ -569,15 +690,16 @@ def cmd_destilar():
             print("SA-IA: nenhum projeto ativo.")
         return
 
-    raw_dir = PROJ_DIR / "raw" / ativo.stem
+    raw_dir = ativo / "raw"
     if not raw_dir.exists() or not any(raw_dir.glob("*.md")):
         if not silencioso:
-            print(f"SA-IA: nenhum registro em raw/ para {ativo.stem}.")
+            print(f"SA-IA: nenhum registro em raw/ para {ativo.name}.")
         return
 
     # Monta contexto
     owner = OWNER_FILE.read_text(encoding="utf-8") if OWNER_FILE.exists() else ""
-    proj = ativo.read_text(encoding="utf-8")
+    proj = (ativo / "ancora.md").read_text(encoding="utf-8") if (ativo / "ancora.md").exists() else ""
+    perfil = (ativo / "perfil-destilacao.md").read_text(encoding="utf-8") if (ativo / "perfil-destilacao.md").exists() else ""
 
     raw_conteudo = ""
     for f in sorted(raw_dir.glob("*.md")):
@@ -589,7 +711,10 @@ OWNER (quem usa o sistema):
 {owner[:1000]}
 
 PROJETO ATIVO:
-{proj[:1500]}
+{proj[:1000]}
+
+CRITÉRIOS DE DESTILAÇÃO:
+{perfil[:500]}
 
 REGISTROS NOVOS:
 {raw_conteudo[:3000]}
@@ -629,25 +754,47 @@ Máximo 10 bullets no total. Seja direto e específico."""
     if not conteudo_novo:
         return
 
+    # Prepend no changelog do projeto
+    changelog_path = ativo / "changelog.md"
+    changelog_existente = changelog_path.read_text(encoding="utf-8") if changelog_path.exists() else ""
+
+    if changelog_existente.startswith("---"):
+        partes = changelog_existente.split("---", 2)
+        frontmatter = f"---{partes[1]}---"
+        corpo = partes[2].strip() if len(partes) > 2 else ""
+    else:
+        frontmatter = ""
+        corpo = changelog_existente.strip()
+
+    frontmatter = re.sub(r"ultima-atualizacao: .+", f"ultima-atualizacao: {hoje()}", frontmatter)
+    novo_changelog = f"{frontmatter}\n\n{conteudo_novo}\n\n---\n\n{corpo}".strip()
+
+    if len(novo_changelog) > 8000:
+        novo_changelog = "\n".join(novo_changelog.splitlines()[:200])
+        novo_changelog += "\n\n---\n*Entradas antigas comprimidas automaticamente.*"
+
+    atomic_write(changelog_path, novo_changelog)
+
+    # Atualiza active-context.md
+    owner_linha = next((l for l in owner.splitlines() if l.startswith("**Nome")), "—")
     novo_ctx = ACTIVE_CTX_TEMPLATE.format(
         data=hoje(),
-        owner_resumo=owner.splitlines()[2] if len(owner.splitlines()) > 2 else "—",
-        projeto_resumo=f"{ativo.stem} — {conteudo_novo[:200]}",
+        owner_resumo=owner_linha,
+        projeto_resumo=f"{ativo.name} — {conteudo_novo[:200]}",
         proximos_passos=conteudo_novo
     )
-
     atomic_write(CTX_DIR / "active-context.md", novo_ctx)
 
     # Git commit automático
     if (ROOT / ".git").exists():
-        subprocess.run(["git", "add", str(CTX_DIR / "active-context.md")],
+        subprocess.run(["git", "add", str(changelog_path), str(CTX_DIR / "active-context.md")],
                        cwd=ROOT, capture_output=True)
         subprocess.run(["git", "commit", "-m",
-                        f"chore(sa-ia): destila {ativo.stem} {hoje()}"],
+                        f"chore(sa-ia): destila {ativo.name} {hoje()}"],
                        cwd=ROOT, capture_output=True)
 
     if not silencioso:
-        print(f"SA-IA: active-context.md atualizado.")
+        print(f"SA-IA: changelog.md e active-context.md atualizados.")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
