@@ -1,0 +1,5 @@
+*.tmp
+*.pyc
+__pycache__/
+.claude/settings.json
+projetos/*/raw/.prompt-destilacao.tmp
