@@ -1,5 +1,5 @@
 # SA-IA — Sistema Âncora para Inteligência Artificial
-*Framework de contexto vivo para projetos de consultoria com IA*
+*Framework de contexto vivo para projetos com IA*
 
 ---
 
@@ -7,7 +7,7 @@
 
 Um LLM não tem memória entre sessões. O que parece "memória" é sempre a mesma coisa: texto colocado no contexto antes da conversa começar.
 
-O SA-IA resolve isso. Ele mantém um arquivo de contexto vivo por projeto, atualizado automaticamente com base no que acontece nas sessões de trabalho. Quando você abre uma nova sessão, o contexto já está injetado — sem repetição, sem reexplicação.
+O SA-IA resolve isso. Ele mantém arquivos de contexto vivos, atualizados automaticamente com base no que acontece nas sessões de trabalho. Quando você abre uma nova sessão, o contexto já está injetado — sem repetição, sem reexplicação.
 
 ```
 Princípio: A IA não tem estado. O contexto é o estado.
@@ -18,76 +18,120 @@ Princípio: A IA não tem estado. O contexto é o estado.
 
 ## Setup — Faça isso primeiro
 
-> O Claude Code lê este arquivo automaticamente ao abrir uma sessão.
-> Se for a primeira vez neste repositório, execute os passos abaixo antes de qualquer outra coisa.
-
-### Detectar se é primeira vez
-
-Verifique se existe o arquivo `ANCORA.md` preenchido com seu nome e objetivo:
-
-```bash
-cat ANCORA.md
-```
-
-Se estiver com os valores de exemplo (`[Seu Nome]`, `[Seu objetivo]`), é primeira vez. Siga os passos abaixo.
+> Se for a primeira vez neste repositório, siga os passos abaixo antes de qualquer outra coisa.
 
 ### Passo 1 — Instalar dependência
 
 ```bash
-pip install anthropic pyyaml
+pip install anthropic
 ```
 
-### Passo 2 — Preencher sua âncora global
+### Passo 2 — Definir seu perfil
 
-Abra `ANCORA.md` e substitua os campos marcados com `[...]`. Esta é sua identidade permanente no sistema — leva 5 minutos.
+Responda: **você é um profissional solo ou representa uma empresa (ou mais de uma)?**
 
-### Passo 3 — Registrar os hooks no Claude Code
-
+**Profissional solo:**
 ```bash
-python sa-ia.py setup
+python sa-ia.py setup --perfil solo
 ```
+Cria: `00-anchor/owner.md` · `02-projects/` · `04-context/`
 
-Este comando copia os hooks para `.claude/hooks/` e registra em `.claude/settings.json`. Só precisa rodar uma vez por máquina.
+**Empresa ou múltiplas empresas:**
+```bash
+python sa-ia.py setup --perfil empresa
+```
+Cria: `00-anchor/owner.md` · `00-anchor/[empresa]/` · `01-departments/[empresa]/` · `02-projects/` · `04-context/`
 
-### Passo 4 — Criar seu primeiro projeto
+Se não souber ainda, use `--perfil solo` — você pode adicionar empresas e departamentos depois com `python sa-ia.py add-company`.
+
+### Passo 3 — Preencher sua âncora
+
+Abra `00-anchor/owner.md` e preencha os campos marcados com `[...]`. Leva 5 minutos e é feito uma única vez.
+
+### Passo 4 — Criar o primeiro projeto
 
 ```bash
 python sa-ia.py create
 ```
 
-O comando pergunta nome, cliente e objetivo do projeto e cria a estrutura de arquivos em `projetos/`.
-
 ### Passo 5 — Trabalhar
 
-Abra o Claude Code normalmente. O contexto do projeto ativo já estará injetado no início de cada sessão.
+Abra o Claude Code normalmente. O contexto já estará injetado no início de cada sessão.
+
+---
+
+## Estrutura de arquivos
+
+### Perfil solo
+
+```
+sa-ia/
+├── CLAUDE.md
+├── sa-ia.py
+├── .claude/
+│   ├── settings.json
+│   └── hooks/
+│       ├── session-start.sh     ← injeta contexto no início da sessão
+│       ├── post-write.sh        ← atualiza active-context.md após escrita
+│       └── validate-anchor.sh   ← bloqueia projeto sem vínculo com âncora
+├── 00-anchor/
+│   └── owner.md                 ← sua identidade e objetivos (você preenche)
+├── 02-projects/
+│   └── [slug].md                ← um arquivo por projeto
+└── 04-context/
+    ├── active-context.md        ← gerado automaticamente
+    └── drift-report.md          ← gerado automaticamente
+```
+
+### Perfil empresa
+
+```
+sa-ia/
+├── 00-anchor/
+│   ├── owner.md                 ← âncora raiz (quem usa o sistema)
+│   └── [empresa]/
+│       └── empresa.md           ← missão e objetivos da empresa
+├── 01-departments/
+│   └── [empresa]/
+│       └── [departamento].md    ← um arquivo por departamento
+├── 02-projects/
+│   └── [slug].md                ← vinculado a empresa + departamento no frontmatter
+└── 04-context/
+    ├── active-context.md
+    └── drift-report.md
+```
 
 ---
 
 ## Como usar no dia a dia
 
-### Registrar algo que aconteceu
+### Registrar o que aconteceu
 
-Salve um arquivo em `projetos/[slug]/raw/` com o que aconteceu — reunião, decisão, entrega, problema. Formato livre, sem regras.
+Salve um arquivo em `02-projects/raw/[slug]/` com o que aconteceu — reunião, decisão, entrega. Formato livre.
 
 ```
-projetos/apollo-advisory/raw/reuniao-2026-07-12.md
+02-projects/raw/apollo-advisory/reuniao-2026-07-12.md
 ```
-
-O hook de encerramento destila automaticamente o que estiver em `raw/` e atualiza o `changelog.md`.
 
 ### Encerrar uma sessão
 
-Diga ao Claude: **"encerra sessão"** ou **"fecha sessão"**.
+Diga: **"encerra sessão"** ou **"fecha sessão"**.
 
-O hook `stop` dispara, destila tudo que aconteceu e atualiza o `changelog.md` do projeto ativo.
+O hook `stop` destila tudo em `raw/` e atualiza o `active-context.md`.
 
-### Criar um novo projeto
+### Criar projeto
 
 ```bash
 python sa-ia.py create
 ```
 
-### Ver o contexto atual de um projeto
+### Adicionar empresa (perfil empresa)
+
+```bash
+python sa-ia.py add-company
+```
+
+### Ver contexto atual
 
 ```bash
 python sa-ia.py status
@@ -95,75 +139,49 @@ python sa-ia.py status
 
 ---
 
-## Estrutura de arquivos
-
-```
-sa-ia/
-├── CLAUDE.md                  ← este arquivo
-├── ANCORA.md                  ← sua identidade global (você preenche)
-├── sa-ia.py                   ← CLI do framework
-├── .claude/
-│   ├── settings.json          ← hooks registrados
-│   └── hooks/
-│       ├── session-start.sh   ← injeta contexto no início da sessão
-│       └── stop.sh            ← destila e atualiza changelog ao encerrar
-└── projetos/
-    └── [slug-do-projeto]/
-        ├── ANCORA_PROJETO.md  ← âncora do projeto (gerada pelo create)
-        ├── perfil-destilacao.md ← critérios do que entra no changelog
-        ├── tasks.md           ← tarefas do projeto
-        ├── changelog.md       ← contexto comprimido (atualizado pelo hook)
-        └── raw/               ← registros brutos (você escreve aqui)
-```
-
----
-
 ## Regras que o Claude deve seguir neste repositório
 
-1. **Nunca sobrescrever um arquivo sem ler o estado atual primeiro** — especialmente `changelog.md` e `tasks.md`.
+1. **Nunca sobrescrever arquivo sem ler o estado atual primeiro** — especialmente `active-context.md` e arquivos de projeto.
 
-2. **Ao encerrar sessão**, sempre executar o hook `stop.sh` ou chamar `python sa-ia.py destilar` antes de fechar.
+2. **Ao encerrar sessão**, sempre executar o hook stop ou `python sa-ia.py destilar` antes de fechar.
 
-3. **Arquivos em `raw/` são de entrada** — o Claude pode criar arquivos lá para registrar o que aconteceu na sessão, mas nunca editar arquivos existentes em `raw/`.
+3. **`04-context/` é gerado automaticamente** — nunca editar manualmente.
 
-4. **`ANCORA.md` e `ANCORA_PROJETO.md` são permanentes** — só editar se o usuário pedir explicitamente. São a bússola do sistema.
+4. **`00-anchor/` é permanente** — só editar se o usuário pedir explicitamente.
 
-5. **`changelog.md` é gerado automaticamente** — nunca editar manualmente. Se precisar corrigir algo, registre em `raw/` e rode a destilação novamente.
+5. **Todo projeto deve ter `anchor` no frontmatter** — vinculado a `owner`, a uma empresa ou a um departamento. Se não tiver, o hook `validate-anchor.sh` bloqueia o commit e pede correção.
 
-6. **Projeto ativo** = o projeto cujo `ANCORA_PROJETO.md` tem `status: ativo`. Se houver mais de um ativo, perguntar qual usar antes de começar.
+6. **Projeto ativo** = arquivo em `02-projects/` com `status: ativo` no frontmatter. Se houver mais de um, perguntar qual usar antes de começar a sessão.
 
 ---
 
 ## Contexto injetado automaticamente
 
-O hook `session-start.sh` injeta no início de cada sessão:
+O hook `session-start.sh` injeta no início de cada sessão, nesta ordem:
 
-- Conteúdo de `ANCORA.md` (sua identidade global)
-- Conteúdo de `ANCORA_PROJETO.md` do projeto ativo
-- Últimas 3 entradas do `changelog.md` do projeto ativo
-- Lista de tarefas abertas do `tasks.md`
-
-Você não precisa reexplicar nada. O contexto já está lá.
+1. `00-anchor/owner.md`
+2. `00-anchor/[empresa]/empresa.md` (se existir empresa ativa)
+3. `01-departments/[empresa]/[dept].md` (se existir departamento do projeto ativo)
+4. `02-projects/[slug].md` do projeto ativo
+5. Últimas entradas do `04-context/active-context.md`
 
 ---
 
 ## Compatibilidade
 
-Funciona com qualquer ferramenta que leia `CLAUDE.md`:
+| Ferramenta | Hooks automáticos | Contexto via CLAUDE.md |
+|---|---|---|
+| Claude Code CLI | ✅ completo | ✅ |
+| Codex | ❌ manual | ✅ |
+| VS Code + extensão Claude | ❌ manual | ✅ |
+| Cursor / Windsurf | ❌ manual | ✅ via `.cursorrules` |
 
-- **Claude Code** (CLI) — suporte completo com hooks automáticos
-- **Codex** — lê o `CLAUDE.md` como contexto de projeto
-- **VS Code + extensão Claude** — lê o `CLAUDE.md` como instruções do workspace
-- **Cursor, Windsurf** — compatível via `CLAUDE.md` ou `.cursorrules`
-
-Os hooks automáticos (`session-start`, `stop`) funcionam apenas no Claude Code CLI. Nos outros ambientes, rode manualmente:
-
+Nos ambientes sem hooks, rode manualmente ao encerrar:
 ```bash
-python sa-ia.py status    # ver contexto atual
-python sa-ia.py destilar  # atualizar changelog manualmente
+python sa-ia.py destilar
 ```
 
 ---
 
 *SA-IA — Sistema Âncora para Inteligência Artificial*
-*Desenvolvido por Márcio Santos — ODDATA / Trium Mind Advisory*
+*github.com/seu-usuario/sa-ia*
