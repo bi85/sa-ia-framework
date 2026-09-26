@@ -4,7 +4,8 @@ SA-IA — Sistema Âncora para Inteligência Artificial
 CLI principal do framework.
 
 Uso:
-  python sa-ia.py setup [--perfil solo|empresa]  — configura estrutura e hooks
+  python sa-ia.py setup [--perfil solo|empresa] [--ferramenta claude|codex|cursor|windsurf|gemini|manual]
+  python sa-ia.py sync-context                   — propaga AGENT-CONTEXT.md para todos os arquivos de ferramenta
   python sa-ia.py add-company                    — adiciona empresa (perfil empresa)
   python sa-ia.py create                         — cria novo projeto
   python sa-ia.py status                         — exibe contexto atual
@@ -14,7 +15,6 @@ Uso:
 import sys
 import os
 import json
-import shutil
 import re
 import subprocess
 from datetime import datetime
@@ -27,17 +27,33 @@ ANCHOR_DIR  = ROOT / "00-anchor"
 DEPT_DIR    = ROOT / "01-departments"
 PROJ_DIR    = ROOT / "02-projects"
 CTX_DIR     = ROOT / "04-context"
-CLAUDE_DIR  = ROOT / ".claude"
-HOOKS_DIR   = CLAUDE_DIR / "hooks"
-SETTINGS    = CLAUDE_DIR / "settings.json"
 OWNER_FILE  = ANCHOR_DIR / "owner.md"
+AGENT_CTX   = ROOT / "AGENT-CONTEXT.md"
+
+# ── Configuração por ferramenta ───────────────────────────────────────────────
+
+TOOLS = {
+    "claude":   {"config_dir": ".claude",  "context_file": "CLAUDE.md",      "hooks": True,  "cli": ["claude", "-p", "--output-format", "text"]},
+    "codex":    {"config_dir": ".codex",   "context_file": "AGENTS.md",       "hooks": True,  "cli": ["codex"]},
+    "cursor":   {"config_dir": None,       "context_file": ".cursorrules",    "hooks": False, "cli": None},
+    "windsurf": {"config_dir": None,       "context_file": ".windsurfrules",  "hooks": False, "cli": None},
+    "gemini":   {"config_dir": None,       "context_file": "GEMINI.md",       "hooks": False, "cli": ["gemini"]},
+    "manual":   {"config_dir": None,       "context_file": "AGENT-CONTEXT.md","hooks": False, "cli": None},
+}
+
+# Arquivos de ferramenta que podem existir no repo
+ALL_CONTEXT_FILES = [
+    "CLAUDE.md", "AGENTS.md", ".cursorrules",
+    ".windsurfrules", "GEMINI.md",
+]
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 OWNER_TEMPLATE = """\
 # Âncora — Owner
 > Preencha este arquivo no setup. É sua identidade permanente no sistema.
-> O Claude injeta este contexto automaticamente no início de cada sessão.
+> O agente injeta este contexto automaticamente no início de cada sessão.
+> Só edite quando sua situação mudar estruturalmente.
 
 ---
 
@@ -53,9 +69,14 @@ OWNER_TEMPLATE = """\
 
 [O objetivo de mais alto nível que governa tudo que você faz. Uma frase.]
 
+Exemplo: *Acumular R$ 3M até 2035 via consultoria e infoprodutos.*
+
 ---
 
 ## Pilares
+
+> Tudo que você faz deve caber em um desses pilares.
+> Se um projeto não cabe em nenhum, é deriva.
 
 1. [Pilar 1] — [descrição em uma linha]
 2. [Pilar 2] — [descrição em uma linha]
@@ -65,6 +86,8 @@ OWNER_TEMPLATE = """\
 
 ## Regras
 
+> Princípios que não mudam por sessão, humor ou urgência.
+
 - [Regra 1]
 - [Regra 2]
 
@@ -72,12 +95,16 @@ OWNER_TEMPLATE = """\
 
 ## Restrições ativas
 
+> O que está fora dos limites agora. Revise a cada trimestre.
+
 - [Restrição 1]
 - [Restrição 2]
 
 ---
 
 ## Contexto atual
+
+> Atualize quando mudar. Não precisa ser exaustivo.
 
 **Foco desta semana:** [o que mais importa agora]
 **Projetos quentes:** [quais merecem atenção prioritária]
@@ -177,7 +204,7 @@ raw/decisao-{data}.md
 raw/entrega-{data}.md
 ```
 
-Formato livre — escreva como quiser. O hook destila automaticamente ao encerrar a sessão.
+Formato livre — escreva como quiser. O agente destila automaticamente ao encerrar a sessão.
 """
 
 PROJ_ANCORA_TEMPLATE = """\
@@ -323,19 +350,17 @@ fi
 
 # 2. Projeto ativo
 PROJ_ATIVO=""
-for f in "$ROOT/02-projects/"*.md; do
-  [ -f "$f" ] || continue
-  if grep -q "status: ativo" "$f"; then
-    PROJ_ATIVO="$f"
+for proj_dir in "$ROOT/02-projects/"/*/; do
+  ancora="$proj_dir/ancora.md"
+  [ -f "$ancora" ] || continue
+  if grep -q "status: ativo" "$ancora"; then
+    PROJ_ATIVO="$ancora"
     break
   fi
 done
 
 if [ -n "$PROJ_ATIVO" ]; then
-  # Lê empresa e departamento do frontmatter
   ANCHOR=$(grep "^anchor:" "$PROJ_ATIVO" | sed 's/anchor: //')
-
-  # Empresa (se anchor aponta para empresa/dept)
   EMPRESA=$(echo "$ANCHOR" | cut -d'/' -f1)
   DEPT=$(echo "$ANCHOR" | cut -d'/' -f2)
 
@@ -378,8 +403,7 @@ HOOK_POST_WRITE = """\
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# Só dispara se o arquivo escrito for um projeto
-if [[ "$CLAUDE_TOOL_RESULT" == *"02-projects"* ]]; then
+if [[ "$TOOL_RESULT" == *"02-projects"* ]] || [[ "$CLAUDE_TOOL_RESULT" == *"02-projects"* ]]; then
   python "$ROOT/sa-ia.py" destilar --silencioso
 fi
 """
@@ -391,11 +415,11 @@ HOOK_VALIDATE = """\
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-for f in "$ROOT/02-projects/"*.md; do
-  [ -f "$f" ] || continue
-  if ! grep -q "^anchor:" "$f"; then
-    echo "SA-IA: projeto sem âncora — $(basename $f)"
-    echo "Adicione 'anchor: owner' ou 'anchor: empresa/departamento' no frontmatter."
+for ancora in "$ROOT/02-projects/"*/ancora.md; do
+  [ -f "$ancora" ] || continue
+  if ! grep -q "^anchor:" "$ancora"; then
+    echo "SA-IA: projeto sem âncora — $ancora"
+    echo "Adicione 'anchor: owner' ou 'anchor: empresa/departamento' no frontmatter de ancora.md."
     exit 1
   fi
 done
@@ -439,28 +463,40 @@ def listar_empresas():
         return []
     return [d for d in ANCHOR_DIR.iterdir() if d.is_dir()]
 
-def criar_hooks():
-    HOOKS_DIR.mkdir(parents=True, exist_ok=True)
+def get_ferramenta_arg():
+    if "--ferramenta" in sys.argv:
+        idx = sys.argv.index("--ferramenta")
+        if idx + 1 < len(sys.argv):
+            return sys.argv[idx + 1]
+    return "claude"
+
+def criar_hooks(config_dir):
+    hooks_dir = ROOT / config_dir / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
     for nome, conteudo in [
-        ("session-start.sh", HOOK_SESSION_START),
-        ("post-write.sh",    HOOK_POST_WRITE),
+        ("session-start.sh",   HOOK_SESSION_START),
+        ("post-write.sh",      HOOK_POST_WRITE),
         ("validate-anchor.sh", HOOK_VALIDATE),
     ]:
-        path = HOOKS_DIR / nome
+        path = hooks_dir / nome
         atomic_write(path, conteudo)
         path.chmod(0o755)
-        print(f"  ✓ {nome}")
+        print(f"  ✓ {config_dir}/hooks/{nome}")
 
-def registrar_settings():
-    CLAUDE_DIR.mkdir(exist_ok=True)
+def registrar_settings(config_dir):
+    cfg_dir = ROOT / config_dir
+    cfg_dir.mkdir(exist_ok=True)
+    settings_path = cfg_dir / "settings.json"
+    hooks_dir = cfg_dir / "hooks"
+
     settings = {}
-    if SETTINGS.exists():
+    if settings_path.exists():
         try:
-            settings = json.loads(SETTINGS.read_text(encoding="utf-8"))
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             pass
 
-    hook_cmd = lambda nome: {"type": "command", "command": f"bash \"{HOOKS_DIR / nome}\""}
+    hook_cmd = lambda nome: {"type": "command", "command": f"bash \"{hooks_dir / nome}\""}
 
     settings["hooks"] = {
         "UserPromptSubmit": [{"matcher": "", "hooks": [hook_cmd("session-start.sh")]}],
@@ -468,8 +504,31 @@ def registrar_settings():
         "Stop":             [{"matcher": "", "hooks": [hook_cmd("validate-anchor.sh")]}],
     }
 
-    atomic_write(SETTINGS, json.dumps(settings, indent=2, ensure_ascii=False))
-    print(f"  ✓ .claude/settings.json")
+    atomic_write(settings_path, json.dumps(settings, indent=2, ensure_ascii=False))
+    print(f"  ✓ {config_dir}/settings.json")
+
+def agente_cli_disponivel(ferramenta):
+    """Retorna o comando CLI do agente se disponível, None caso contrário."""
+    tool_cfg = TOOLS.get(ferramenta, TOOLS["claude"])
+    cli = tool_cfg.get("cli")
+    if not cli:
+        return None
+    try:
+        subprocess.run([cli[0], "--version"], capture_output=True, timeout=5)
+        return cli
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+def detectar_ferramenta():
+    """Detecta qual CLI de agente está disponível no PATH."""
+    for ferramenta, cfg in TOOLS.items():
+        if cfg.get("cli") and ferramenta != "manual":
+            try:
+                subprocess.run([cfg["cli"][0], "--version"], capture_output=True, timeout=5)
+                return ferramenta, cfg["cli"]
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+    return None, None
 
 # ── Comandos ──────────────────────────────────────────────────────────────────
 
@@ -480,11 +539,18 @@ def cmd_setup():
         if idx + 1 < len(sys.argv):
             perfil = sys.argv[idx + 1]
 
+    ferramenta = get_ferramenta_arg()
+
     if perfil not in ("solo", "empresa"):
         print("Perfil inválido. Use: --perfil solo  ou  --perfil empresa")
         sys.exit(1)
 
-    print(f"\nSA-IA — Setup ({perfil})\n")
+    if ferramenta not in TOOLS:
+        print(f"Ferramenta inválida. Opções: {', '.join(TOOLS.keys())}")
+        sys.exit(1)
+
+    tool_cfg = TOOLS[ferramenta]
+    print(f"\nSA-IA — Setup ({perfil}, {ferramenta})\n")
 
     # Estrutura base
     ANCHOR_DIR.mkdir(exist_ok=True)
@@ -502,27 +568,72 @@ def cmd_setup():
     if perfil == "empresa":
         DEPT_DIR.mkdir(exist_ok=True)
         print(f"  ✓ 01-departments/")
-        print(f"\n  Próximo passo: python sa-ia.py add-company")
 
-    # Hooks
-    print(f"\nRegistrando hooks:")
-    criar_hooks()
-    registrar_settings()
+    # Hooks e settings (apenas ferramentas com suporte a hooks)
+    if tool_cfg["hooks"] and tool_cfg["config_dir"]:
+        print(f"\nRegistrando hooks ({ferramenta}):")
+        criar_hooks(tool_cfg["config_dir"])
+        registrar_settings(tool_cfg["config_dir"])
+
+    # Gera arquivo de contexto da ferramenta a partir de AGENT-CONTEXT.md
+    ctx_file = ROOT / tool_cfg["context_file"]
+    if AGENT_CTX.exists() and not ctx_file.exists():
+        ctx_file.write_text(AGENT_CTX.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"  ✓ {tool_cfg['context_file']}")
 
     # .gitignore
     gitignore = ROOT / ".gitignore"
     if not gitignore.exists():
-        atomic_write(gitignore, "*.tmp\n__pycache__/\n.claude/settings.json\n")
+        ignorar = ["*.tmp", "__pycache__/"]
+        if tool_cfg["config_dir"]:
+            ignorar.append(f"{tool_cfg['config_dir']}/settings.json")
+        atomic_write(gitignore, "\n".join(ignorar) + "\n")
         print(f"  ✓ .gitignore")
+
+    instrucoes_ferramenta = {
+        "claude":   "claude  (abrir Claude Code — contexto já injetado)",
+        "codex":    "codex  (abrir Codex — contexto já injetado)",
+        "cursor":   "Abra o Cursor. O contexto está em .cursorrules.",
+        "windsurf": "Abra o Windsurf. O contexto está em .windsurfrules.",
+        "gemini":   "gemini  (contexto já disponível em GEMINI.md)",
+        "manual":   "Copie o conteúdo de AGENT-CONTEXT.md para o system prompt do seu agente.",
+    }
+
+    passo_empresa = ""
+    if perfil == "empresa":
+        passo_empresa = "  2. python sa-ia.py add-company  (criar empresa)\n  3. python sa-ia.py create  (criar primeiro projeto)"
+    else:
+        passo_empresa = "  2. python sa-ia.py create  (criar primeiro projeto)"
 
     print(f"""
 Setup concluído.
 
 Próximos passos:
   1. Preencha 00-anchor/owner.md com sua identidade
-  2. python sa-ia.py create  (criar primeiro projeto)
-  3. claude  (abrir Claude Code — contexto já injetado)
+{passo_empresa}
+  → {instrucoes_ferramenta[ferramenta]}
 """)
+
+
+def cmd_sync_context():
+    """Propaga AGENT-CONTEXT.md para todos os arquivos de ferramenta presentes no repo."""
+    if not AGENT_CTX.exists():
+        print("SA-IA: AGENT-CONTEXT.md não encontrado.")
+        sys.exit(1)
+
+    conteudo = AGENT_CTX.read_text(encoding="utf-8")
+    atualizados = []
+
+    for nome in ALL_CONTEXT_FILES:
+        path = ROOT / nome
+        if path.exists():
+            path.write_text(conteudo, encoding="utf-8")
+            atualizados.append(nome)
+
+    if atualizados:
+        print(f"SA-IA: sync-context — atualizados: {', '.join(atualizados)}")
+    else:
+        print("SA-IA: nenhum arquivo de ferramenta encontrado. Rode setup primeiro.")
 
 
 def cmd_add_company():
@@ -546,7 +657,6 @@ def cmd_add_company():
             nome=nome, departamentos="[liste os departamentos aqui]", data=hoje()
         ))
 
-    # Departamentos opcionais
     print(f"\nEmpresa '{nome}' criada.")
     adicionar = input("Deseja adicionar departamentos agora? [s/N]: ").strip().lower()
 
@@ -564,8 +674,8 @@ def cmd_add_company():
 
     print(f"\n✓ Estrutura criada em:")
     print(f"  00-anchor/{slug}/empresa.md")
-    if any(dept_empresa.iterdir()):
-        for f in dept_empresa.iterdir():
+    if DEPT_DIR.exists() and (DEPT_DIR / slug).exists():
+        for f in (DEPT_DIR / slug).iterdir():
             print(f"  01-departments/{slug}/{f.name}")
 
 
@@ -578,9 +688,9 @@ def cmd_create():
         sys.exit(1)
 
     slug = slugify(nome)
-    proj_file = PROJ_DIR / f"{slug}.md"
+    proj_dir_path = PROJ_DIR / slug
 
-    if proj_file.exists():
+    if proj_dir_path.exists():
         print(f"Projeto '{slug}' já existe.")
         sys.exit(1)
 
@@ -601,7 +711,6 @@ def cmd_create():
             empresa = empresas[int(escolha) - 1]
             anchor = empresa.name
 
-            # Departamento opcional
             depts = list((DEPT_DIR / empresa.name).glob("*.md")) if (DEPT_DIR / empresa.name).exists() else []
             if depts:
                 print(f"\nDepartamento (opcional):")
@@ -623,22 +732,16 @@ def cmd_create():
                 atomic_write(ancora_file, conteudo.replace("status: ativo", "status: pausado"))
 
     # Cria estrutura de pasta do projeto
-    proj_dir = PROJ_DIR / slug
-    proj_dir.mkdir(parents=True, exist_ok=True)
-    (proj_dir / "raw").mkdir(exist_ok=True)
+    proj_dir_path.mkdir(parents=True, exist_ok=True)
+    (proj_dir_path / "raw").mkdir(exist_ok=True)
 
     ctx = dict(nome=nome, slug=slug, anchor=anchor, objetivo=objetivo, data=hoje())
 
-    atomic_write(proj_dir / "README.md",
-                 PROJ_README_TEMPLATE.format(**ctx))
-    atomic_write(proj_dir / "ancora.md",
-                 PROJ_ANCORA_TEMPLATE.format(**ctx))
-    atomic_write(proj_dir / "perfil-destilacao.md",
-                 PERFIL_TEMPLATE.format(**ctx))
-    atomic_write(proj_dir / "tasks.md",
-                 TASKS_TEMPLATE.format(**ctx))
-    atomic_write(proj_dir / "changelog.md",
-                 CHANGELOG_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir_path / "README.md",              PROJ_README_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir_path / "ancora.md",              PROJ_ANCORA_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir_path / "perfil-destilacao.md",   PERFIL_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir_path / "tasks.md",               TASKS_TEMPLATE.format(**ctx))
+    atomic_write(proj_dir_path / "changelog.md",           CHANGELOG_TEMPLATE.format(**ctx))
 
     print(f"\n✓ Projeto criado: 02-projects/{slug}/")
     print(f"  ├── README.md")
@@ -659,7 +762,6 @@ def cmd_status():
 
     print(f"Projeto ativo: {ativo.name}\n")
 
-    # Tarefas abertas
     tasks = ativo / "tasks.md"
     if tasks.exists():
         abertas = [l for l in tasks.read_text(encoding="utf-8").splitlines()
@@ -669,7 +771,6 @@ def cmd_status():
             for t in abertas:
                 print(f"  {t}")
 
-    # Raw pendente
     raw_dir = ativo / "raw"
     if raw_dir.exists():
         raw = sorted(raw_dir.glob("*.md"))
@@ -696,9 +797,8 @@ def cmd_destilar():
             print(f"SA-IA: nenhum registro em raw/ para {ativo.name}.")
         return
 
-    # Monta contexto
     owner = OWNER_FILE.read_text(encoding="utf-8") if OWNER_FILE.exists() else ""
-    proj = (ativo / "ancora.md").read_text(encoding="utf-8") if (ativo / "ancora.md").exists() else ""
+    proj  = (ativo / "ancora.md").read_text(encoding="utf-8") if (ativo / "ancora.md").exists() else ""
     perfil = (ativo / "perfil-destilacao.md").read_text(encoding="utf-8") if (ativo / "perfil-destilacao.md").exists() else ""
 
     raw_conteudo = ""
@@ -740,21 +840,38 @@ Máximo 10 bullets no total. Seja direto e específico."""
     if not silencioso:
         print(f"SA-IA: destilando {ativo.stem}...")
 
-    result = subprocess.run(
-        ["claude", "-p", "--output-format", "text"],
-        input=prompt, capture_output=True, text=True, encoding="utf-8"
-    )
+    # Detecta qual CLI de agente está disponível
+    ferramenta_detectada, cli = detectar_ferramenta()
+    conteudo_novo = None
 
-    if result.returncode != 0:
+    if ferramenta_detectada == "claude":
+        result = subprocess.run(
+            ["claude", "-p", "--output-format", "text"],
+            input=prompt, capture_output=True, text=True, encoding="utf-8"
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            conteudo_novo = result.stdout.strip()
+
+    elif ferramenta_detectada == "gemini":
+        result = subprocess.run(
+            ["gemini", "-p", prompt],
+            capture_output=True, text=True, encoding="utf-8"
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            conteudo_novo = result.stdout.strip()
+
+    if conteudo_novo is None:
+        # Fallback: salva o prompt para processamento manual
+        prompt_path = CTX_DIR / f"destilar-prompt-{hoje()}.txt"
+        atomic_write(prompt_path, prompt)
         if not silencioso:
-            print(f"SA-IA: erro ao chamar claude CLI.\n{result.stderr}")
+            print(f"SA-IA: nenhuma CLI de agente detectada.")
+            print(f"Prompt salvo em: {prompt_path}")
+            print(f"Cole o conteúdo no seu agente e salve o resultado em:")
+            print(f"  {ativo / 'raw' / f'destilacao-{hoje()}.md'}")
         return
 
-    conteudo_novo = result.stdout.strip()
-    if not conteudo_novo:
-        return
-
-    # Prepend no changelog do projeto
+    # Atualiza changelog
     changelog_path = ativo / "changelog.md"
     changelog_existente = changelog_path.read_text(encoding="utf-8") if changelog_path.exists() else ""
 
@@ -775,7 +892,6 @@ Máximo 10 bullets no total. Seja direto e específico."""
 
     atomic_write(changelog_path, novo_changelog)
 
-    # Atualiza active-context.md
     owner_linha = next((l for l in owner.splitlines() if l.startswith("**Nome")), "—")
     novo_ctx = ACTIVE_CTX_TEMPLATE.format(
         data=hoje(),
@@ -785,7 +901,6 @@ Máximo 10 bullets no total. Seja direto e específico."""
     )
     atomic_write(CTX_DIR / "active-context.md", novo_ctx)
 
-    # Git commit automático
     if (ROOT / ".git").exists():
         subprocess.run(["git", "add", str(changelog_path), str(CTX_DIR / "active-context.md")],
                        cwd=ROOT, capture_output=True)
@@ -800,11 +915,12 @@ Máximo 10 bullets no total. Seja direto e específico."""
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 COMANDOS = {
-    "setup":       cmd_setup,
-    "add-company": cmd_add_company,
-    "create":      cmd_create,
-    "status":      cmd_status,
-    "destilar":    cmd_destilar,
+    "setup":        cmd_setup,
+    "sync-context": cmd_sync_context,
+    "add-company":  cmd_add_company,
+    "create":       cmd_create,
+    "status":       cmd_status,
+    "destilar":     cmd_destilar,
 }
 
 def main():

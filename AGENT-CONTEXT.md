@@ -1,8 +1,9 @@
-[//]: # (Gerado pelo SA-IA a partir de AGENT-CONTEXT.md — para OpenAI Codex)
-[//]: # (Para editar o framework, edite AGENT-CONTEXT.md e rode: python sa-ia.py sync-context)
-
 # SA-IA — Sistema Âncora para Inteligência Artificial
 *Fonte de contexto universal — válida para qualquer agente de IA*
+
+> Este é o arquivo-fonte do SA-IA. `CLAUDE.md`, `AGENTS.md`, `.cursorrules` e
+> similares são cópias geradas automaticamente. Para editar o framework,
+> edite este arquivo e rode `python sa-ia.py sync-context`.
 
 ---
 
@@ -29,31 +30,40 @@ Responda: **você é um profissional solo ou representa uma empresa (ou mais de 
 
 **Profissional solo:**
 ```bash
-python sa-ia.py setup --perfil solo --ferramenta codex
+python sa-ia.py setup --perfil solo
 ```
 Cria: `00-anchor/owner.md` · `02-projects/` · `04-context/`
 
 **Empresa ou múltiplas empresas:**
 ```bash
-python sa-ia.py setup --perfil empresa --ferramenta codex
+python sa-ia.py setup --perfil empresa
 ```
 Cria: `00-anchor/owner.md` · `00-anchor/[empresa]/` · `01-departments/[empresa]/` · `02-projects/` · `04-context/`
 
 Se não souber ainda, use `--perfil solo` — você pode adicionar empresas e departamentos depois com `python sa-ia.py add-company`.
 
-### Passo 2 — Preencher sua âncora
+### Passo 2 — Escolher sua ferramenta (opcional)
+
+Por padrão, o setup configura para Claude Code. Para outra ferramenta:
+
+```bash
+python sa-ia.py setup --perfil solo --ferramenta cursor
+# opções: claude · codex · cursor · windsurf · gemini · manual
+```
+
+### Passo 3 — Preencher sua âncora
 
 Abra `00-anchor/owner.md` e preencha os campos marcados com `[...]`. Leva 5 minutos e é feito uma única vez.
 
-### Passo 3 — Criar o primeiro projeto
+### Passo 4 — Criar o primeiro projeto
 
 ```bash
 python sa-ia.py create
 ```
 
-### Passo 4 — Trabalhar
+### Passo 5 — Trabalhar
 
-Abra o Codex normalmente. O contexto já estará injetado no início de cada sessão.
+Abra o agente normalmente. O contexto já estará injetado no início de cada sessão.
 
 ---
 
@@ -68,7 +78,7 @@ sa-ia/
 ├── AGENTS.md                ← gerado — OpenAI Codex
 ├── .cursorrules             ← gerado — Cursor / Windsurf
 ├── sa-ia.py
-├── .codex/
+├── .claude/ ou .codex/
 │   ├── settings.json
 │   └── hooks/
 │       ├── session-start.sh     ← injeta contexto no início da sessão
@@ -136,6 +146,16 @@ python sa-ia.py add-company
 ```bash
 python sa-ia.py status
 ```
+
+### Sincronizar arquivos de ferramenta
+
+Após editar este arquivo:
+
+```bash
+python sa-ia.py sync-context
+```
+
+Isso copia o conteúdo atualizado para `CLAUDE.md`, `AGENTS.md`, `.cursorrules` e demais arquivos de ferramenta presentes no repositório.
 
 ---
 

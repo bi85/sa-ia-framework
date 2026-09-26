@@ -1,5 +1,8 @@
+[//]: # (Gerado pelo SA-IA a partir de AGENT-CONTEXT.md — para Claude Code)
+[//]: # (Para editar o framework, edite AGENT-CONTEXT.md e rode: python sa-ia.py sync-context)
+
 # SA-IA — Sistema Âncora para Inteligência Artificial
-*Framework de contexto vivo para projetos com IA*
+*Fonte de contexto universal — válida para qualquer agente de IA*
 
 ---
 
@@ -20,13 +23,7 @@ Princípio: A IA não tem estado. O contexto é o estado.
 
 > Se for a primeira vez neste repositório, siga os passos abaixo antes de qualquer outra coisa.
 
-### Passo 1 — Instalar dependência
-
-```bash
-pip install anthropic
-```
-
-### Passo 2 — Definir seu perfil
+### Passo 1 — Definir seu perfil
 
 Responda: **você é um profissional solo ou representa uma empresa (ou mais de uma)?**
 
@@ -44,17 +41,17 @@ Cria: `00-anchor/owner.md` · `00-anchor/[empresa]/` · `01-departments/[empresa
 
 Se não souber ainda, use `--perfil solo` — você pode adicionar empresas e departamentos depois com `python sa-ia.py add-company`.
 
-### Passo 3 — Preencher sua âncora
+### Passo 2 — Preencher sua âncora
 
 Abra `00-anchor/owner.md` e preencha os campos marcados com `[...]`. Leva 5 minutos e é feito uma única vez.
 
-### Passo 4 — Criar o primeiro projeto
+### Passo 3 — Criar o primeiro projeto
 
 ```bash
 python sa-ia.py create
 ```
 
-### Passo 5 — Trabalhar
+### Passo 4 — Trabalhar
 
 Abra o Claude Code normalmente. O contexto já estará injetado no início de cada sessão.
 
@@ -66,7 +63,10 @@ Abra o Claude Code normalmente. O contexto já estará injetado no início de ca
 
 ```
 sa-ia/
-├── CLAUDE.md
+├── AGENT-CONTEXT.md         ← fonte universal (edite aqui)
+├── CLAUDE.md                ← gerado — Claude Code
+├── AGENTS.md                ← gerado — OpenAI Codex
+├── .cursorrules             ← gerado — Cursor / Windsurf
 ├── sa-ia.py
 ├── .claude/
 │   ├── settings.json
@@ -77,7 +77,7 @@ sa-ia/
 ├── 00-anchor/
 │   └── owner.md                 ← sua identidade e objetivos (você preenche)
 ├── 02-projects/
-│   └── [slug].md                ← um arquivo por projeto
+│   └── [slug]/                  ← uma pasta por projeto
 └── 04-context/
     ├── active-context.md        ← gerado automaticamente
     └── drift-report.md          ← gerado automaticamente
@@ -95,7 +95,7 @@ sa-ia/
 │   └── [empresa]/
 │       └── [departamento].md    ← um arquivo por departamento
 ├── 02-projects/
-│   └── [slug].md                ← vinculado a empresa + departamento no frontmatter
+│   └── [slug]/                  ← vinculado a empresa + departamento no frontmatter
 └── 04-context/
     ├── active-context.md
     └── drift-report.md
@@ -107,10 +107,10 @@ sa-ia/
 
 ### Registrar o que aconteceu
 
-Salve um arquivo em `02-projects/raw/[slug]/` com o que aconteceu — reunião, decisão, entrega. Formato livre.
+Salve um arquivo em `02-projects/[slug]/raw/` com o que aconteceu — reunião, decisão, entrega. Formato livre.
 
 ```
-02-projects/raw/apollo-advisory/reuniao-2026-07-12.md
+02-projects/apollo-advisory/raw/reuniao-2026-07-12.md
 ```
 
 ### Encerrar uma sessão
@@ -139,7 +139,7 @@ python sa-ia.py status
 
 ---
 
-## Regras que o Claude deve seguir neste repositório
+## Regras para o agente
 
 1. **Nunca sobrescrever arquivo sem ler o estado atual primeiro** — especialmente `active-context.md` e arquivos de projeto.
 
@@ -149,9 +149,9 @@ python sa-ia.py status
 
 4. **`00-anchor/` é permanente** — só editar se o usuário pedir explicitamente.
 
-5. **Todo projeto deve ter `anchor` no frontmatter** — vinculado a `owner`, a uma empresa ou a um departamento. Se não tiver, o hook `validate-anchor.sh` bloqueia o commit e pede correção.
+5. **Todo projeto deve ter `anchor` no frontmatter** — vinculado a `owner`, a uma empresa ou a um departamento. Se não tiver, o hook `validate-anchor.sh` bloqueia e pede correção.
 
-6. **Projeto ativo** = arquivo em `02-projects/` com `status: ativo` no frontmatter. Se houver mais de um, perguntar qual usar antes de começar a sessão.
+6. **Projeto ativo** = pasta em `02-projects/` com `status: ativo` no frontmatter de `ancora.md`. Se houver mais de um, perguntar qual usar antes de começar a sessão.
 
 ---
 
@@ -162,21 +162,23 @@ O hook `session-start.sh` injeta no início de cada sessão, nesta ordem:
 1. `00-anchor/owner.md`
 2. `00-anchor/[empresa]/empresa.md` (se existir empresa ativa)
 3. `01-departments/[empresa]/[dept].md` (se existir departamento do projeto ativo)
-4. `02-projects/[slug].md` do projeto ativo
+4. `02-projects/[slug]/ancora.md` do projeto ativo
 5. Últimas entradas do `04-context/active-context.md`
 
 ---
 
 ## Compatibilidade
 
-| Ferramenta | Hooks automáticos | Contexto via CLAUDE.md |
+| Ferramenta | Hooks automáticos | Arquivo de contexto |
 |---|---|---|
-| Claude Code CLI | ✅ completo | ✅ |
-| Codex | ❌ manual | ✅ |
-| VS Code + extensão Claude | ❌ manual | ✅ |
-| Cursor / Windsurf | ❌ manual | ✅ via `.cursorrules` |
+| Claude Code | ✅ completo | `CLAUDE.md` |
+| OpenAI Codex | ✅ completo | `AGENTS.md` |
+| Cursor | ❌ manual | `.cursorrules` |
+| Windsurf | ❌ manual | `.windsurfrules` |
+| Gemini CLI | ❌ manual | `GEMINI.md` |
+| Qualquer LLM | ❌ manual | `AGENT-CONTEXT.md` |
 
-Nos ambientes sem hooks, rode manualmente ao encerrar:
+Nos ambientes sem hooks, rode manualmente ao encerrar a sessão:
 ```bash
 python sa-ia.py destilar
 ```
@@ -184,4 +186,4 @@ python sa-ia.py destilar
 ---
 
 *SA-IA — Sistema Âncora para Inteligência Artificial*
-*github.com/seu-usuario/sa-ia*
+*github.com/bi85/sa-ia*

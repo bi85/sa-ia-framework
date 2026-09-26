@@ -1,6 +1,6 @@
 # Âncora — Owner
 > Preencha este arquivo no setup. É sua identidade permanente no sistema.
-> O Claude injeta este contexto automaticamente no início de cada sessão.
+> O agente injeta este contexto automaticamente no início de cada sessão.
 > Só edite quando sua situação mudar estruturalmente.
 
 ---
