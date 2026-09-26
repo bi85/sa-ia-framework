@@ -81,9 +81,9 @@ sa-ia/
 ├── .claude/ ou .codex/
 │   ├── settings.json
 │   └── hooks/
-│       ├── session-start.sh     ← injeta contexto no início da sessão
-│       ├── post-write.sh        ← atualiza active-context.md após escrita
-│       └── validate-anchor.sh   ← bloqueia projeto sem vínculo com âncora
+│       ├── session-start.py     ← injeta contexto no início da sessão
+│       ├── post-write.py        ← atualiza active-context.md após escrita
+│       └── validate-anchor.py   ← bloqueia projeto sem vínculo com âncora
 ├── 00-anchor/
 │   └── owner.md                 ← sua identidade e objetivos (você preenche)
 ├── 02-projects/
@@ -169,7 +169,7 @@ Isso copia o conteúdo atualizado para `CLAUDE.md`, `AGENTS.md`, `.cursorrules` 
 
 4. **`00-anchor/` é permanente** — só editar se o usuário pedir explicitamente.
 
-5. **Todo projeto deve ter `anchor` no frontmatter** — vinculado a `owner`, a uma empresa ou a um departamento. Se não tiver, o hook `validate-anchor.sh` bloqueia e pede correção.
+5. **Todo projeto deve ter `anchor` no frontmatter** — vinculado a `owner`, a uma empresa ou a um departamento. Se não tiver, o hook `validate-anchor.py` bloqueia e pede correção.
 
 6. **Projeto ativo** = pasta em `02-projects/` com `status: ativo` no frontmatter de `ancora.md`. Se houver mais de um, perguntar qual usar antes de começar a sessão.
 
@@ -177,7 +177,7 @@ Isso copia o conteúdo atualizado para `CLAUDE.md`, `AGENTS.md`, `.cursorrules` 
 
 ## Contexto injetado automaticamente
 
-O hook `session-start.sh` injeta no início de cada sessão, nesta ordem:
+O hook `session-start.py` injeta no início de cada sessão, nesta ordem:
 
 1. `00-anchor/owner.md`
 2. `00-anchor/[empresa]/empresa.md` (se existir empresa ativa)

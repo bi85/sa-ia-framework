@@ -332,100 +332,121 @@ gerado: {data}
 {proximos_passos}
 """
 
-HOOK_SESSION_START = """\
-#!/usr/bin/env bash
-# SA-IA — session-start
+HOOK_SESSION_START = '''\
+#!/usr/bin/env python3
+# SA-IA — session-start (cross-platform)
 # Injeta contexto no início de cada sessão.
+# Funciona em Windows, Linux e macOS sem dependências além de Python.
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+import sys
+from pathlib import Path
 
-echo ""
-echo "━━━ SA-IA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ROOT = Path(__file__).resolve().parent.parent.parent
 
-# 1. Owner
-if [ -f "$ROOT/00-anchor/owner.md" ]; then
-  echo ""
-  cat "$ROOT/00-anchor/owner.md"
-fi
+def print_section(titulo, conteudo, limite=None):
+    print(f"\n━━━ {titulo} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    linhas = conteudo.splitlines()
+    if limite:
+        linhas = linhas[:limite]
+    print("\\n".join(linhas))
 
-# 2. Projeto ativo
-PROJ_ATIVO=""
-for proj_dir in "$ROOT/02-projects/"/*/; do
-  ancora="$proj_dir/ancora.md"
-  [ -f "$ancora" ] || continue
-  if grep -q "status: ativo" "$ancora"; then
-    PROJ_ATIVO="$ancora"
-    break
-  fi
-done
+def main():
+    print("\\n━━━ SA-IA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-if [ -n "$PROJ_ATIVO" ]; then
-  ANCHOR=$(grep "^anchor:" "$PROJ_ATIVO" | sed 's/anchor: //')
-  EMPRESA=$(echo "$ANCHOR" | cut -d'/' -f1)
-  DEPT=$(echo "$ANCHOR" | cut -d'/' -f2)
+    owner = ROOT / "00-anchor" / "owner.md"
+    if owner.exists():
+        print("\\n" + owner.read_text(encoding="utf-8"))
 
-  if [ -f "$ROOT/00-anchor/$EMPRESA/empresa.md" ]; then
-    echo ""
-    echo "━━━ EMPRESA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    cat "$ROOT/00-anchor/$EMPRESA/empresa.md"
-  fi
+    ativo = None
+    proj_dir = ROOT / "02-projects"
+    if proj_dir.exists():
+        for p in sorted(proj_dir.iterdir()):
+            ancora = p / "ancora.md"
+            if ancora.exists() and "status: ativo" in ancora.read_text(encoding="utf-8"):
+                ativo = ancora
+                break
 
-  if [ -n "$DEPT" ] && [ -f "$ROOT/01-departments/$EMPRESA/$DEPT.md" ]; then
-    echo ""
-    echo "━━━ DEPARTAMENTO ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    cat "$ROOT/01-departments/$EMPRESA/$DEPT.md"
-  fi
+    if ativo:
+        conteudo = ativo.read_text(encoding="utf-8")
+        anchor = next((l.replace("anchor:", "").strip()
+                       for l in conteudo.splitlines() if l.startswith("anchor:")), "")
+        partes = anchor.split("/", 1)
+        empresa, dept = partes[0], partes[1] if len(partes) > 1 else ""
 
-  echo ""
-  echo "━━━ PROJETO ATIVO ━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  cat "$PROJ_ATIVO"
-else
-  echo ""
-  echo "Nenhum projeto ativo. Use: python sa-ia.py create"
-fi
+        empresa_md = ROOT / "00-anchor" / empresa / "empresa.md"
+        if empresa_md.exists():
+            print_section("EMPRESA", empresa_md.read_text(encoding="utf-8"))
 
-# 3. Contexto atual
-if [ -f "$ROOT/04-context/active-context.md" ]; then
-  echo ""
-  echo "━━━ CONTEXTO ATIVO ━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  head -60 "$ROOT/04-context/active-context.md"
-fi
+        if dept:
+            dept_md = ROOT / "01-departments" / empresa / f"{dept}.md"
+            if dept_md.exists():
+                print_section("DEPARTAMENTO", dept_md.read_text(encoding="utf-8"))
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-"""
+        print_section("PROJETO ATIVO", conteudo)
+    else:
+        print("\\nNenhum projeto ativo. Use: python sa-ia.py create")
 
-HOOK_POST_WRITE = """\
-#!/usr/bin/env bash
-# SA-IA — post-write
+    ctx = ROOT / "04-context" / "active-context.md"
+    if ctx.exists():
+        print_section("CONTEXTO ATIVO", ctx.read_text(encoding="utf-8"), limite=60)
+
+    print("\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n")
+
+if __name__ == "__main__":
+    main()
+'''
+
+HOOK_POST_WRITE = '''\
+#!/usr/bin/env python3
+# SA-IA — post-write (cross-platform)
 # Atualiza active-context.md após qualquer escrita em 02-projects/.
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+import os
+import sys
+import subprocess
+from pathlib import Path
 
-if [[ "$TOOL_RESULT" == *"02-projects"* ]] || [[ "$CLAUDE_TOOL_RESULT" == *"02-projects"* ]]; then
-  python "$ROOT/sa-ia.py" destilar --silencioso
-fi
-"""
+ROOT = Path(__file__).resolve().parent.parent.parent
 
-HOOK_VALIDATE = """\
-#!/usr/bin/env bash
-# SA-IA — validate-anchor
-# Bloqueia commit se projeto não tiver anchor definido.
+def main():
+    resultado = os.environ.get("CLAUDE_TOOL_RESULT", "") or os.environ.get("TOOL_RESULT", "")
+    if "02-projects" in resultado:
+        subprocess.run(
+            [sys.executable, str(ROOT / "sa-ia.py"), "destilar", "--silencioso"],
+            cwd=ROOT
+        )
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if __name__ == "__main__":
+    main()
+'''
 
-for ancora in "$ROOT/02-projects/"*/ancora.md; do
-  [ -f "$ancora" ] || continue
-  if ! grep -q "^anchor:" "$ancora"; then
-    echo "SA-IA: projeto sem âncora — $ancora"
-    echo "Adicione 'anchor: owner' ou 'anchor: empresa/departamento' no frontmatter de ancora.md."
-    exit 1
-  fi
-done
+HOOK_VALIDATE = '''\
+#!/usr/bin/env python3
+# SA-IA — validate-anchor (cross-platform)
+# Bloqueia sessão se algum projeto não tiver anchor definido.
 
-exit 0
-"""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+
+def main():
+    proj_dir = ROOT / "02-projects"
+    if not proj_dir.exists():
+        sys.exit(0)
+    for p in proj_dir.iterdir():
+        ancora = p / "ancora.md"
+        if ancora.exists():
+            conteudo = ancora.read_text(encoding="utf-8")
+            if "anchor:" not in conteudo:
+                print(f"SA-IA: projeto sem âncora — {ancora}")
+                print("Adicione 'anchor: owner' ou 'anchor: empresa/dept' no frontmatter de ancora.md.")
+                sys.exit(1)
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+'''
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -474,13 +495,12 @@ def criar_hooks(config_dir):
     hooks_dir = ROOT / config_dir / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     for nome, conteudo in [
-        ("session-start.sh",   HOOK_SESSION_START),
-        ("post-write.sh",      HOOK_POST_WRITE),
-        ("validate-anchor.sh", HOOK_VALIDATE),
+        ("session-start.py",   HOOK_SESSION_START),
+        ("post-write.py",      HOOK_POST_WRITE),
+        ("validate-anchor.py", HOOK_VALIDATE),
     ]:
         path = hooks_dir / nome
         atomic_write(path, conteudo)
-        path.chmod(0o755)
         print(f"  ✓ {config_dir}/hooks/{nome}")
 
 def registrar_settings(config_dir):
@@ -496,12 +516,13 @@ def registrar_settings(config_dir):
         except json.JSONDecodeError:
             pass
 
-    hook_cmd = lambda nome: {"type": "command", "command": f"bash \"{hooks_dir / nome}\""}
+    py = sys.executable
+    hook_cmd = lambda nome: {"type": "command", "command": f"\"{py}\" \"{hooks_dir / nome}\""}
 
     settings["hooks"] = {
-        "UserPromptSubmit": [{"matcher": "", "hooks": [hook_cmd("session-start.sh")]}],
-        "PostToolUse":      [{"matcher": "Write|Edit", "hooks": [hook_cmd("post-write.sh")]}],
-        "Stop":             [{"matcher": "", "hooks": [hook_cmd("validate-anchor.sh")]}],
+        "UserPromptSubmit": [{"matcher": "", "hooks": [hook_cmd("session-start.py")]}],
+        "PostToolUse":      [{"matcher": "Write|Edit", "hooks": [hook_cmd("post-write.py")]}],
+        "Stop":             [{"matcher": "", "hooks": [hook_cmd("validate-anchor.py")]}],
     }
 
     atomic_write(settings_path, json.dumps(settings, indent=2, ensure_ascii=False))
