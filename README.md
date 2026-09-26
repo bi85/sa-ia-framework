@@ -124,9 +124,20 @@ A âncora (`owner.md`) funciona como constituição: toda tarefa nova é cruzada
 
 ---
 
+## Contribuindo
+
+O SA-IA melhora com uso real. Contribuições são bem-vindas:
+
+- **Bug ou comportamento inesperado** → abra uma [issue](https://github.com/bi85/sa-ia-framework/issues)
+- **Melhoria no `sa-ia.py`** → fork + PR com descrição do problema que resolve
+- **Suporte a nova ferramenta** (Zed, Aider, etc.) → adicione a entrada em `TOOLS` e o arquivo de contexto correspondente
+- **Tradução** → o framework está em português, mas PRs com versões em outros idiomas são aceitos
+
+Quando você atualiza o repo com `git pull`, o SA-IA detecta automaticamente que há commits novos e avisa na próxima vez que você rodar qualquer comando.
+
 ## Licença
 
-MIT — use livremente, contribuições bem-vindas.
+MIT — use livremente.
 
 ---
 

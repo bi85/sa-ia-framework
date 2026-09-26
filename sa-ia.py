@@ -939,6 +939,40 @@ Máximo 10 bullets no total. Seja direto e específico."""
         print(f"SA-IA: changelog.md e active-context.md atualizados.")
 
 
+# ── Verificação de atualização ────────────────────────────────────────────────
+
+def check_for_updates():
+    """Verifica silenciosamente se há commits novos no repositório remoto."""
+    try:
+        if not (ROOT / ".git").exists():
+            return
+
+        # Fetch silencioso com timeout curto — nunca trava o fluxo
+        subprocess.run(
+            ["git", "fetch", "origin", "--quiet"],
+            cwd=ROOT, capture_output=True, timeout=5
+        )
+
+        # @{upstream} resolve o branch rastreado automaticamente (master ou main)
+        result = subprocess.run(
+            ["git", "rev-list", "HEAD..@{upstream}", "--count"],
+            cwd=ROOT, capture_output=True, text=True, timeout=5
+        )
+
+        if result.returncode != 0:
+            return
+
+        count = result.stdout.strip()
+        if count and int(count) > 0:
+            print(f"┌─ SA-IA: {count} atualização(ões) disponível(is) ─────────────────")
+            print(f"│  git pull  para aplicar melhorias da comunidade")
+            print(f"│  github.com/bi85/sa-ia-framework")
+            print(f"└────────────────────────────────────────────────────────────\n")
+
+    except Exception:
+        pass  # Nunca interrompe o fluxo principal
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 COMANDOS = {
@@ -954,6 +988,7 @@ def main():
     if len(sys.argv) < 2 or sys.argv[1] not in COMANDOS:
         print(__doc__)
         sys.exit(0)
+    check_for_updates()
     COMANDOS[sys.argv[1]]()
 
 if __name__ == "__main__":
