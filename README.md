@@ -22,9 +22,10 @@ Princípio: A IA não tem estado. O contexto é o estado.
 ## Quickstart
 
 ```bash
-git clone https://github.com/bi85/sa-ia
-cd sa-ia
-python sa-ia.py setup --perfil solo
+git clone https://github.com/bi85/sa-ia-framework
+cd sa-ia-framework
+python sa-ia.py setup --perfil solo   # Linux / macOS
+py sa-ia.py setup --perfil solo       # Windows
 ```
 
 Preencha `00-anchor/owner.md` com sua identidade (5 minutos, feito uma vez), crie um projeto:
